@@ -74,15 +74,24 @@ regressor.add(Dense(units = 1))
 
 
 # Compiling the RNN
-regressor.compile(optimizer = 'adam', loss = 'mean_squared_error')
+from keras.metrics import MeanAbsoluteError # Monitoring Model Performance
+regressor.compile(optimizer = 'adam', loss = 'mean_squared_error', metrics=[MeanAbsoluteError()])
 
 # Callbacks for early stopping and model checkpointing
 from keras.callbacks import EarlyStopping, ModelCheckpoint # type: ignore
-early_stopping = EarlyStopping(monitor='loss', patience=10)
+early_stopping = EarlyStopping(monitor='val_loss', patience=5)
 model_checkpoint = ModelCheckpoint('best_flow_prediction_model.keras', save_best_only=True)
 
+# Validation Set
+from sklearn.model_selection import train_test_split
+# Splitting the dataset into training and validation sets
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+
+
 # Fitting the RNN to the Training set
-regressor.fit(X_train, y_train, epochs = 50, batch_size = 32, callbacks=[early_stopping, model_checkpoint])
+regressor.fit(X_train, y_train, epochs = 50, batch_size = 32, 
+              validation_data=(X_val, y_val), 
+              callbacks=[early_stopping, model_checkpoint])
 
 # Save the model
 regressor.save('flow_prediction_model.keras')  # Save the model
