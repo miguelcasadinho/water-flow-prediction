@@ -93,6 +93,10 @@ duplicate_rows = dataset[dataset.duplicated()]
 dataset.drop_duplicates(inplace=True)
 
 
+# Save to CSV file
+dataset.to_csv('dataset_clean.csv', index=True)
+
+
 #Finding gaps in the timedata
 
 # Calculate the difference between consecutive rows
