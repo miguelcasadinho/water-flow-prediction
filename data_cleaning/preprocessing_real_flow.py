@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # Importing the dataset
-dataset = pd.read_csv('./zb2_jan24_27_10_24.csv', parse_dates=['Time'])
+dataset = pd.read_csv('./zb2_28_10_24.csv', parse_dates=['Time'])
 
 # Função para arredondar para o múltiplo de 5 minutos mais próximo
 def round_to_nearest_5_minutes(timestamp):
@@ -66,7 +66,6 @@ complete_time_index = pd.date_range(start=dataset['Time'].min(), end=dataset['Ti
 # Reindex the dataset with the complete time index
 dataset = dataset.set_index('Time').reindex(complete_time_index)
 
-
 # Reset index to bring 'Time' back as a column
 dataset.reset_index(inplace=True)
 dataset.rename(columns={'index': 'Time'}, inplace=True)
@@ -74,6 +73,7 @@ dataset.rename(columns={'index': 'Time'}, inplace=True)
 # Fill the NaN values in the 'Distribuído' column using forward fill and linear interpolation
 dataset['Distribuído'] = dataset['Distribuído'].ffill()  # Forward fill
 dataset['Distribuído'] = dataset['Distribuído'].interpolate(method='linear')  # Linear interpolation
+
 
 # Set time as index and extract 'flow'
 dataset.set_index('Time', inplace=True)
@@ -88,8 +88,7 @@ dataset['Minute'] = dataset.index.minute
 
 
 # Save to CSV file
-dataset.to_csv('dataset.csv', index=True)
-
+dataset.to_csv('dataset_test.csv', index=True)
 
 '''
 # Identify rows with NaN values
