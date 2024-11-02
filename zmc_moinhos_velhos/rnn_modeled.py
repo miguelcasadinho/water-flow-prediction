@@ -33,14 +33,14 @@ def round_to_nearest_15_minutes(timestamp):
 dataset['Time'] = pd.to_datetime(dataset['Time'])
 dataset_test['Time'] = pd.to_datetime(dataset_test['Time'])
 dataset['Time'] = dataset['Time'].apply(round_to_nearest_15_minutes)
-dataset_test['Time'] = dataset['Time'].apply(round_to_nearest_15_minutes)
+dataset_test['Time'] = dataset_test['Time'].apply(round_to_nearest_15_minutes)
 #print(dataset_test)
 
 # Handling rows with NaN values
 # Identify rows with NaN values
 dataset_rows_with_nan = dataset[dataset.isnull().any(axis=1)]
 #print("Rows with NaN in dataset:", dataset_rows_with_nan)
-dataset_test_rows_with_nan = dataset[dataset.isnull().any(axis=1)]
+dataset_test_rows_with_nan = dataset_test[dataset_test.isnull().any(axis=1)]
 #print("Rows with NaN in dataset:", dataset_test_rows_with_nan)
 # Deleting rows with NaN values
 dataset.dropna(inplace=True)
@@ -95,22 +95,10 @@ dataset_test.set_index('Time', inplace=True)
 values = dataset['flow'].values
 values = dataset_test['flow'].values
 
-#Feature engineering (extract useful time features)
-dataset['Month'] = dataset.index.month
-dataset_test['Month'] = dataset_test.index.month
-dataset['day_of_month'] = dataset.index.day
-dataset_test['day_of_month'] = dataset_test.index.day
-dataset['day_of_week'] = dataset.index.dayofweek
-dataset_test['day_of_week'] = dataset_test.index.dayofweek
-dataset['Hour'] = dataset.index.hour
-dataset_test['Hour'] = dataset_test.index.hour
-dataset['Minute'] = dataset.index.minute
-dataset_test['Minute'] = dataset_test.index.minute
-
 #Save to CSV file
 dataset.to_csv('dataset.csv', index=True)
 dataset_test.to_csv('dataset_test.csv', index=True)
-
+#print(dataset_test)
 
 # Part 2 - Making the predictions and visualising the results
 
@@ -129,9 +117,13 @@ real_flow = dataset_test.iloc[:, 0].values
 
 # Getting the predicted flow of the last day
 dataset_total = pd.concat((dataset['flow'], dataset_test['flow']), axis = 0)
+print(dataset_total.shape)
 inputs = dataset_total[len(dataset_total) - len(dataset_test) - len(dataset_test):].values
+print(inputs.shape)
 inputs = inputs.reshape(-1,1)
+print(inputs.shape)
 inputs = sc.fit_transform(inputs)
+print(inputs.shape)
 
 # Define the lookback period for sequence input to the model
 lookback_period = len(dataset_test)

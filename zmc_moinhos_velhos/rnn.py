@@ -33,14 +33,14 @@ def round_to_nearest_15_minutes(timestamp):
 dataset['Time'] = pd.to_datetime(dataset['Time'])
 dataset_test['Time'] = pd.to_datetime(dataset_test['Time'])
 dataset['Time'] = dataset['Time'].apply(round_to_nearest_15_minutes)
-dataset_test['Time'] = dataset['Time'].apply(round_to_nearest_15_minutes)
+dataset_test['Time'] = dataset_test['Time'].apply(round_to_nearest_15_minutes)
 #print(dataset_test)
 
 # Handling rows with NaN values
 # Identify rows with NaN values
 dataset_rows_with_nan = dataset[dataset.isnull().any(axis=1)]
 #print("Rows with NaN in dataset:", dataset_rows_with_nan)
-dataset_test_rows_with_nan = dataset[dataset.isnull().any(axis=1)]
+dataset_test_rows_with_nan = dataset_test[dataset_test.isnull().any(axis=1)]
 #print("Rows with NaN in dataset:", dataset_test_rows_with_nan)
 # Deleting rows with NaN values
 dataset.dropna(inplace=True)
