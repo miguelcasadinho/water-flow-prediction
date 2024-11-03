@@ -7,7 +7,7 @@ import logging
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-import psycopg2
+import pyodbc
 from scipy.stats import zscore
 from keras.models import load_model
 import tensorflow as tf
@@ -17,22 +17,32 @@ from sklearn.metrics import mean_squared_error
 # Set logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
 # Load configuration from environment variables
 DATABASE_CONFIG = {
-    'host': os.getenv('psqlGiggoHost'),
-    'database': os.getenv('psqlGiggoDatabase'),
-    'user': os.getenv('psqlGiggoUser'),
-    'password': os.getenv('psqlGiggoPassword')
+    'host': os.getenv('sqlInoutHost'),
+    'database': os.getenv('sqlInoutDatabase'),
+    'user': os.getenv('sqlInoutUser'),
+    'password': os.getenv('sqlInoutPassword')
 }
 
-LOOKBACK_PERIOD = 96
-MODEL_PATH = './flow_prediction_model.keras'
+LOOKBACK_PERIOD = 288
+MODEL_PATH = './updated_flow_prediction_model.keras'
 UPDATED_MODEL_PATH = 'updated_flow_prediction_model.keras'
+timestamp = datetime.now().strftime("%Y:%m:%d_%H:%M")
+UPDATED_MODEL_PATH_VERSION = f'./models/flow_prediction_model_{timestamp}.keras'
 
-# Establish connection to the PostgreSQL database.
+# Establish connection to the SQL Server database
 def connect_to_db():
     try:
-        conn = psycopg2.connect(**DATABASE_CONFIG)
+        connection_string = (
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={DATABASE_CONFIG['host']};"
+            f"DATABASE={DATABASE_CONFIG['database']};"
+            f"UID={DATABASE_CONFIG['user']};"
+            f"PWD={DATABASE_CONFIG['password']}"
+        )
+        conn = pyodbc.connect(connection_string)
         logging.info("Database connection established successfully.")
         return conn
     except Exception as e:
@@ -40,51 +50,70 @@ def connect_to_db():
         raise
 
 # Fetch flow data from the database
-def fetch_data(cur):
+def fetch_data(conn):
     try:
-        cur.execute("""
+        query = """
             SELECT 
-                date,
-                flow
+                Data as date,
+                Valor as flow
             FROM
-                flow
+                Go_Ready.dbo.Telegestao_data
             WHERE
-                device = '202035132'
-                AND date BETWEEN (CURRENT_DATE - interval '2 days') AND (CURRENT_DATE)
-            ORDER BY date ASC
-        """)
+                Tag_ID = 37
+                AND Data BETWEEN 
+                    CAST(DATEADD(day, -2, GETDATE()) AS DATE) -- 00:00 of 2 days ago
+                    AND CAST(GETDATE() AS DATE)  -- 00:00 of today
+            ORDER BY Data ASC
+        """
+        # Create a cursor from the connection
+        cur = conn.cursor()
+        
+        # Execute the query
+        cur.execute(query)
+        
+        # Fetch all rows
         rows = cur.fetchall()
+
+        # Convert rows to a list of tuples with floats instead of Decimals
+        rows = [(date, float(flow)) for date, flow in rows]
+
+        # Convert to DataFrame
+        df = pd.DataFrame(rows, columns=["date", "flow"])
+        
         logging.info("Data fetched successfully from the database.")
-        return pd.DataFrame(rows, columns=["date", "flow"])
+        return df
     except Exception as e:
         logging.error(f"Error fetching data: {e}")
         raise
+    finally:
+        cur.close()  # Close the cursor
 
 # Preprocess the dataset: round timestamps, handle NaNs, remove duplicates and outliers
 def preprocess_data(dataset):
-    # Round to nearest 15 minutes
-    def round_to_nearest_15_minutes(timestamp):
+    # Round to nearest 5 minutes
+    def round_to_nearest_5_minutes(timestamp):
         minutes = timestamp.minute
-        nearest_15 = 15 * round(minutes / 15)
-        if nearest_15 == 60:
+        nearest_5 = 5 * round(minutes / 5)
+        if nearest_5 == 60:
             return timestamp.replace(hour=timestamp.hour + 1, minute=0, second=0, microsecond=0) if timestamp.hour < 23 else timestamp.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        return timestamp.replace(minute=nearest_15, second=0, microsecond=0)
+        return timestamp.replace(minute=nearest_5, second=0, microsecond=0)
 
     dataset['date'] = pd.to_datetime(dataset['date'])
-    dataset['date'] = dataset['date'].apply(round_to_nearest_15_minutes)
+    dataset['date'] = dataset['date'].apply(round_to_nearest_5_minutes)
 
     # Handle NaNs
     dataset.dropna(inplace=True)
 
     # Remove duplicates
     dataset.drop_duplicates(subset=['date'], inplace=True)
+    dataset_size = len(dataset)
 
     # Outlier detection using Z-score
     z_scores = zscore(dataset['flow'])
     dataset = dataset[(np.abs(z_scores) <= 5)]  # Remove outliers
 
     # Complete time index and fill missing values
-    complete_time_index = pd.date_range(start=dataset['date'].min(), end=dataset['date'].max(), freq='15min')
+    complete_time_index = pd.date_range(start=dataset['date'].min(), end=dataset['date'].max(), freq='5min')
     dataset = dataset.set_index('date').reindex(complete_time_index)
 
     # Ensure the 'flow' column is numeric and fill missing values
@@ -92,7 +121,7 @@ def preprocess_data(dataset):
     dataset['flow'] = dataset['flow'].ffill().interpolate(method='linear')
 
     logging.info("Data preprocessing completed.")
-    return dataset.reset_index().rename(columns={'index': 'date'}).set_index('date')
+    return dataset.reset_index().rename(columns={'index': 'date'}).set_index('date'), dataset_size
 
 # Prepare the input data for the model 
 def prepare_input_for_model(dataset, lookback_period):
@@ -130,27 +159,34 @@ def update_model_with_new_data(model, X_new, y_new, epochs=5, batch_size=32):
 def dynamic_model_update():
     # Database connection
     conn = connect_to_db()
-    cur = conn.cursor()
 
     # Fetch and preprocess data
-    dataset = fetch_data(cur)
-    dataset = preprocess_data(dataset)
+    dataset = fetch_data(conn)
+    conn.close()  # Close the connection
+    dataset, dataset_size = preprocess_data(dataset)
 
-    # Prepare input for model
-    X_new, y_new, scaler = prepare_input_for_model(dataset, LOOKBACK_PERIOD)
-    
-    # Load model 
-    model = load_model(MODEL_PATH)
-    
-    # Evaluate the model before updating
-    evaluate_model(model, X_new, y_new)
-    
-    # Update the model with the new data
-    updated_model = update_model_with_new_data(model, X_new, y_new)
-    
-    # Save the updated model 
-    updated_model.save(UPDATED_MODEL_PATH)
-    logging.info("Model updated and saved successfully.")
+    # Check if the dataset length is greater than 550 after preprocessing
+    if dataset_size > 550:
+        logging.info(f"Dataset length after preprocessing is {len(dataset)}. Proceeding with model update.")
+
+        # Prepare input for model
+        X_new, y_new, scaler = prepare_input_for_model(dataset, LOOKBACK_PERIOD)
+
+        # Load model 
+        model = load_model(MODEL_PATH)
+
+        # Evaluate the model before updating
+        evaluate_model(model, X_new, y_new)
+
+        # Update the model with the new data
+        updated_model = update_model_with_new_data(model, X_new, y_new)
+
+        # Save the updated model
+        updated_model.save(UPDATED_MODEL_PATH)
+        updated_model.save(UPDATED_MODEL_PATH_VERSION)
+        logging.info("Model updated and saved successfully.")
+    else:
+        logging.warning(f"Dataset length after preprocessing is {len(dataset)}, which is less than 500. Model update skipped.")
 
 # Run the dynamic model update process
 if __name__ == "__main__":
