@@ -190,5 +190,3 @@ if __name__ == "__main__":
         dynamic_model_update()
     except Exception as e:
         print(f"An error occurred during model update: {e}")
-
-
