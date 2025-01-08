@@ -134,7 +134,7 @@ def connect_to_psql():
             host=os.getenv('psqlGiggoHost'),
             database=os.getenv('psqlGiggoDatabase'),
             user=os.getenv('psqlGiggoUser'),
-            password=os.getenv('psqlGiggoPassword')
+            password=os.getenv('psqlGiggoPassword2')
         )
         return conn
     except Exception as e:
